@@ -1,4 +1,4 @@
-// Niltalk, April 2015
+// LIVECHATTO, JULY 2022
 // License AGPL3
 
 package main
@@ -17,17 +17,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/asadbek064/livechatto/internal/hub"
-	"github.com/asadbek064/livechatto/store"
-	"github.com/asadbek064/livechatto/store/fs"
-	"github.com/asadbek064/livechatto/store/mem"
-	"github.com/asadbek064/livechatto/store/redis"
 	"github.com/go-chi/chi"
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/parsers/toml"
 	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/providers/posflag"
+	"github.com/knadh/niltalk/internal/hub"
+	"github.com/knadh/niltalk/store/redis"
 	"github.com/knadh/stuffbin"
 	flag "github.com/spf13/pflag"
 )
@@ -59,7 +56,6 @@ func loadConfig() {
 	f.StringSlice("config", []string{"config.toml"},
 		"Path to one or more TOML config files to load in order")
 	f.Bool("new-config", false, "generate sample config file")
-	f.Bool("onion", false, "Show the onion URL")
 	f.String("static-dir", "", "(optional) path to directory with static files")
 	f.Bool("version", false, "Show build version")
 	f.Parse(os.Args[1:])
@@ -93,9 +89,9 @@ func loadConfig() {
 	}
 
 	// Merge env flags into config.
-	if err := ko.Load(env.Provider("NILTALK_", ".", func(s string) string {
+	if err := ko.Load(env.Provider("LIVECHATTO_", ".", func(s string) string {
 		return strings.Replace(strings.ToLower(
-			strings.TrimPrefix(s, "NILTALK_")), "__", ".", -1)
+			strings.TrimPrefix(s, "LIVECHATTO_")), "__", ".", -1)
 	}), nil); err != nil {
 		logger.Printf("error loading env config: %v", err)
 	}
@@ -199,47 +195,15 @@ func main() {
 	}
 
 	// Initialize store.
-	var store store.Store
-	if app.cfg.Storage == "redis" {
-		var storeCfg redis.Config
-		if err := ko.Unmarshal("store", &storeCfg); err != nil {
-			logger.Fatalf("error unmarshalling 'store' config: %v", err)
-		}
-
-		s, err := redis.New(storeCfg)
-		if err != nil {
-			log.Fatalf("error initializing store: %v", err)
-		}
-		store = s
-
-	} else if app.cfg.Storage == "memory" {
-		var storeCfg mem.Config
-		if err := ko.Unmarshal("store", &storeCfg); err != nil {
-			logger.Fatalf("error unmarshalling 'store' config: %v", err)
-		}
-
-		s, err := mem.New(storeCfg)
-		if err != nil {
-			log.Fatalf("error initializing store: %v", err)
-		}
-		store = s
-
-	} else if app.cfg.Storage == "fs" {
-		var storeCfg fs.Config
-		if err := ko.Unmarshal("store", &storeCfg); err != nil {
-			logger.Fatalf("error unmarshalling 'store' config: %v", err)
-		}
-
-		s, err := fs.New(storeCfg, logger)
-		if err != nil {
-			log.Fatalf("error initializing store: %v", err)
-		}
-		store = s
-
-	} else {
-		logger.Fatal("app.storage must be one of redis|memory|fs")
+	var storeCfg redis.Config
+	if err := ko.Unmarshal("store", &storeCfg); err != nil {
+		logger.Fatalf("error unmarshalling 'store' config: %v", err)
 	}
 
+	store, err := redis.New(storeCfg)
+	if err != nil {
+		log.Fatalf("error initializing store: %v", err)
+	}
 	app.hub = hub.NewHub(app.cfg, store, logger)
 
 	// Compile static templates.
@@ -266,19 +230,11 @@ func main() {
 	})
 
 	// Start the app.
-	var srv interface {
-		ListenAndServe() error
+	srv := &http.Server{
+		Addr:    ko.String("app.address"),
+		Handler: r,
 	}
-
-	if appAddress := ko.String("app.address"); appAddress {
-		srv = &http.Server{
-			Addr:    appAddress,
-			Handler: r,
-		}
-		logger.Printf("starting server on http://%v", appAddress)
-
-	}
-
+	logger.Printf("starting server on %v", ko.String("app.address"))
 	if err := srv.ListenAndServe(); err != nil {
 		logger.Fatalf("couldn't start server: %v", err)
 	}

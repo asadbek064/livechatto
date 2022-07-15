@@ -17,9 +17,6 @@ type Store interface {
 	GetSession(sessID, roomID string) (Sess, error)
 	RemoveSession(sessID, roomID string) error
 	ClearSessions(roomID string) error
-
-	Get(key string) ([]byte, error)
-	Set(key string, value []byte) error
 }
 
 // Room represents the properties of a room in the store.

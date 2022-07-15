@@ -7,9 +7,9 @@ import (
 	"io/ioutil"
 	"net/http"
 
-	"github.com/asadbek064/livechatto/internal/hub"
 	"github.com/go-chi/chi"
 	"github.com/gorilla/websocket"
+	"github.com/knadh/niltalk/internal/hub"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -115,16 +115,6 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	if err := readJSONReq(r, &req); err != nil {
 		respondJSON(w, nil, errors.New("error parsing JSON request"), http.StatusBadRequest)
 		return
-	}
-
-	if req.Handle == "" {
-		h, err := hub.GenerateGUID(8)
-		if err != nil {
-			app.logger.Printf("error generating uniq handle: %v", err)
-			respondJSON(w, nil, errors.New("error generating uniq handle"), http.StatusInternalServerError)
-			return
-		}
-		req.Handle = h
 	}
 
 	// Validate password.
