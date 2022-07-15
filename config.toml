@@ -40,8 +40,8 @@ session_cookie = "7602a081-9295-4c56-8073-c48e07e6d094"
 # Redis cache server.
 # Rooms are cached until they expires. Messages are not cached.
 [store]
-address = "redis:6379" # Eg: 127.0.0.1:6379
-password = ""
+address = "redis-10913.c135.eu-central-1-1.ec2.cloud.redislabs.com:10913" # Eg: 127.0.0.1:6379
+password = "FL7BVZiarigXjCFFR6tyJNVd5gBxlslj"
 db = 0
 active_conns = 100
 idle_conns = 20

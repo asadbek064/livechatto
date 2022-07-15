@@ -47,7 +47,7 @@ fieldset p {
 }
 a {
   text-decoration: none;
-  color: #f74600;
+  color: #F62852;
 }
 a:hover {
   color: #222;
@@ -126,12 +126,12 @@ input:focus {
 
 button,
 .button {
-  background: #f74600;
+  background: #F62852;
   font-size: 1.5em;
   color: #fff;
 
   border-radius: 3px;
-  border: 1px solid #f74600;
+  border: 1px solid #F62852;
   padding: 10px 30px;
   box-shadow: none;
   cursor: pointer;
