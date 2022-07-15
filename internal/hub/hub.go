@@ -185,4 +185,4 @@ func GenerateGUID(n int) (string, error) {
 		bytes[k] = dictionary[v%byte(len(dictionary))]
 	}
 	return string(bytes), nil
-}c
+}

@@ -1,30 +1,22 @@
-package fs
+package mem
 
 import (
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"log"
-	"os"
 	"sync"
 	"time"
 
-	"github.com/asadbek064/livechatto/store"
+	"github.com/knadh/niltalk/store"
 )
 
-// Config represents the file store config structure.
-type Config struct {
-	Path string `koanf:"path"`
-}
+// Config represents the InMemory store config structure.
+type Config struct{}
 
-// File represents the file implementation of the Store interface.
-type File struct {
+// InMemory represents the in-memory implementation of the Store interface.
+type InMemory struct {
 	cfg   *Config
 	rooms map[string]*room
 	data  map[string][]byte
 	mu    sync.Mutex
-	dirty bool
-	log   *log.Logger
 }
 
 type room struct {
@@ -34,30 +26,27 @@ type room struct {
 }
 
 // New returns a new Redis store.
-func New(cfg Config, log *log.Logger) (*File, error) {
-	store := &File{
+func New(cfg Config) (*InMemory, error) {
+	store := &InMemory{
 		cfg:   &cfg,
 		rooms: map[string]*room{},
 		data:  map[string][]byte{},
-		log:   log,
 	}
-	err := store.load()
 	go store.watch()
-	return store, err
+	return store, nil
 }
 
 // watch the store to clean it up.
-func (m *File) watch() {
+func (m *InMemory) watch() {
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
 	for range t.C {
 		m.cleanup()
-		m.save()
 	}
 }
 
 // cleanup the store to removes expired items.
-func (m *File) cleanup() {
+func (m *InMemory) cleanup() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -66,76 +55,27 @@ func (m *File) cleanup() {
 	for id, r := range m.rooms {
 		if r.Expire.Before(now) {
 			delete(m.rooms, id)
-			m.dirty = true
 			continue
 		}
 	}
 }
 
-// load the data from the file system.
-func (m *File) load() error {
-	if _, err := os.Stat(m.cfg.Path); os.IsExist(err) {
-		x := struct {
-			Rooms map[string]*room
-			Data  map[string][]byte
-		}{}
-		var data []byte
-		data, err = ioutil.ReadFile(m.cfg.Path)
-		if err != nil {
-			return err
-		}
-		err = json.Unmarshal(data, &x)
-		if err != nil {
-			return err
-		}
-		m.rooms = x.Rooms
-		m.data = x.Data
-	}
-	return nil
-}
-
-// save the data to the file system.
-func (m *File) save() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.dirty {
-		data, err := json.Marshal(struct {
-			Rooms map[string]*room
-			Data  map[string][]byte
-		}{
-			Rooms: m.rooms,
-			Data:  m.data,
-		})
-		if err == nil {
-			m.dirty = false
-			go func() {
-				err := ioutil.WriteFile(m.cfg.Path, data, os.ModePerm)
-				if err != nil {
-					m.log.Printf("error writing file %q: %v", m.cfg.Path, err)
-				}
-			}()
-		}
-	}
-}
-
 // AddRoom adds a room to the store.
-func (m *File) AddRoom(r store.Room, ttl time.Duration) error {
+func (m *InMemory) AddRoom(r store.Room, ttl time.Duration) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	key := r.ID
-	m.rooms[key] = &room{
+	m.rooms[r.ID] = &room{
 		Room:     r,
 		Expire:   r.CreatedAt.Add(ttl),
 		Sessions: map[string]string{},
 	}
-	m.dirty = true
 
 	return nil
 }
 
 // ExtendRoomTTL extends a room's TTL.
-func (m *File) ExtendRoomTTL(id string, ttl time.Duration) error {
+func (m *InMemory) ExtendRoomTTL(id string, ttl time.Duration) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -146,12 +86,11 @@ func (m *File) ExtendRoomTTL(id string, ttl time.Duration) error {
 
 	room.Expire = room.Expire.Add(ttl)
 	m.rooms[id] = room
-	m.dirty = true
 	return nil
 }
 
 // GetRoom gets a room from the store.
-func (m *File) GetRoom(id string) (store.Room, error) {
+func (m *InMemory) GetRoom(id string) (store.Room, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -164,7 +103,7 @@ func (m *File) GetRoom(id string) (store.Room, error) {
 }
 
 // RoomExists checks if a room exists in the store.
-func (m *File) RoomExists(id string) (bool, error) {
+func (m *InMemory) RoomExists(id string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -174,20 +113,17 @@ func (m *File) RoomExists(id string) (bool, error) {
 }
 
 // RemoveRoom deletes a room from the store.
-func (m *File) RemoveRoom(id string) error {
+func (m *InMemory) RemoveRoom(id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if _, ok := m.rooms[id]; ok {
-		delete(m.rooms, id)
-		m.dirty = true
-	}
+	delete(m.rooms, id)
 
 	return nil
 }
 
 // AddSession adds a sessionID room to the store.
-func (m *File) AddSession(sessID, handle, roomID string, ttl time.Duration) error {
+func (m *InMemory) AddSession(sessID, handle, roomID string, ttl time.Duration) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -199,13 +135,12 @@ func (m *File) AddSession(sessID, handle, roomID string, ttl time.Duration) erro
 
 	room.Sessions[sessID] = handle
 	m.rooms[roomID] = room
-	m.dirty = true
 
 	return nil
 }
 
 // GetSession retrieves a peer session from the store.
-func (m *File) GetSession(sessID, roomID string) (store.Sess, error) {
+func (m *InMemory) GetSession(sessID, roomID string) (store.Sess, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -228,7 +163,7 @@ func (m *File) GetSession(sessID, roomID string) (store.Sess, error) {
 }
 
 // RemoveSession deletes a session ID from a room.
-func (m *File) RemoveSession(sessID, roomID string) error {
+func (m *InMemory) RemoveSession(sessID, roomID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -238,17 +173,14 @@ func (m *File) RemoveSession(sessID, roomID string) error {
 		return store.ErrRoomNotFound
 	}
 
-	if _, ok := room.Sessions[sessID]; ok {
-		delete(room.Sessions, sessID)
-		m.rooms[roomID] = room
-		m.dirty = true
-	}
+	delete(room.Sessions, sessID)
+	m.rooms[roomID] = room
 
 	return nil
 }
 
 // ClearSessions deletes all the sessions in a room.
-func (m *File) ClearSessions(roomID string) error {
+func (m *InMemory) ClearSessions(roomID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -261,13 +193,12 @@ func (m *File) ClearSessions(roomID string) error {
 	room.Sessions = map[string]string{}
 
 	m.rooms[roomID] = room
-	m.dirty = true
 
 	return nil
 }
 
 // Get value from a key.
-func (m *File) Get(key string) ([]byte, error) {
+func (m *InMemory) Get(key string) ([]byte, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	d, ok := m.data[key]
@@ -278,11 +209,10 @@ func (m *File) Get(key string) ([]byte, error) {
 }
 
 // Set a value.
-func (m *File) Set(key string, data []byte) error {
+func (m *InMemory) Set(key string, data []byte) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.data[key] = make([]byte, len(data), len(data))
 	copy(m.data[key], data)
-	m.dirty = true
 	return nil
 }
